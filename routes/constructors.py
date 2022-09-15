@@ -1,7 +1,6 @@
-from select import select
-from fastapi import APIRouter
-import sqlalchemy as db
-from config.db import connection, engine, metadata
+from sqlalchemy import select, func
+from fastapi import APIRouter, Query
+from config.db import connection
 from models.constructor import constructors, circuits, drivers, races, pit_stops, results, qualifying, lap_times
 
 
@@ -9,13 +8,6 @@ constructor = APIRouter()
 
 
 @constructor.get('/constructors')
-# def allConstructors():
-#     constructors = db.Table('constructors', metadata,
-#                             autoload=True, autoload_with=engine)
-#     query = db.select([constructors])
-#     ResultProxy = connection.execute(query)
-#     ResultSet = ResultProxy.fetchall()
-#     return ResultSet
 def getConstructors():
     return connection.execute(constructors.select()).fetchall()
 
@@ -53,3 +45,37 @@ def getQualifying():
 @constructor.get('/lap-times')
 def getLapTimes():
     return connection.execute(lap_times.select()).fetchall()
+
+
+@constructor.get('/year-with-more-races')
+def getYear():
+    return connection.execute(select(races.c.year)
+                              .group_by(races.c.year)
+                              .order_by(func.count('*').desc())).first()
+
+
+@constructor.get('/winningest-driver')
+def getWinningestDriver():
+    return connection.execute(select(drivers)
+                              .join(results, results.c.driverId == drivers.c.id)
+                              .where(results.c.positionOrder == 1)
+                              .group_by(drivers.c.id)
+                              .order_by(func.count('*').desc())).first()
+
+
+@constructor.get('/circuit-with-more-races')
+def getCircuit():
+    circuitId = connection.execute(select(races.c.circuitId)
+                                   .group_by(races.c.circuitId)
+                                   .order_by(func.count('*').desc())).first()
+    return connection.execute(select(circuits).where(circuits.c.id == circuitId.circuitId)).fetchall()
+
+
+@constructor.get("/highest-scoring-driver-by-constructor/")
+def getHighestScoringDriver(nationality: list[str] | None = Query(default=None)):
+    highestScoringDriverId = connection.execute(select(results.c.driverId)
+                                                .join(constructors, results.c.constructorId == constructors.c.id)
+                                                .where(constructors.c.nationality.in_(nationality))
+                                                .group_by(results.c.driverId)
+                                                .order_by(func.sum(results.c.points).desc())).first()
+    return connection.execute(select(drivers).where(drivers.c.id == highestScoringDriverId.driverId)).fetchall()
